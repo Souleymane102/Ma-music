@@ -1,4 +1,4 @@
-var C='ma-musique-v1';
+var C='ma-musique-v2';
 var F=['./','./index.html','./manifest.json','./icon.svg'];
 self.addEventListener('install',function(e){
   e.waitUntil(caches.open(C).then(function(c){return c.addAll(F)}));

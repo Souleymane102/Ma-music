@@ -35,6 +35,7 @@ li .x{background:none;border:0;color:var(--mut);font-size:20px;cursor:pointer}
 .ctl button.on{color:var(--ac)}
 #pp{background:var(--ac);color:#fff;border-radius:50%;width:52px;height:52px;padding:0}
 .hide{display:none}
+#toast{position:fixed;left:50%;bottom:calc(210px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:20px;font-size:14px;opacity:0;transition:opacity .3s;pointer-events:none;max-width:90%;text-align:center;z-index:9}
 </style>
 </head>
 <body>
@@ -73,6 +74,7 @@ li .x{background:none;border:0;color:var(--mut);font-size:20px;cursor:pointer}
 </div>
 <audio id="au"></audio>
 
+<div id="toast"></div>
 <script>
 (function(){
 var $=function(i){return document.getElementById(i)};
@@ -170,16 +172,18 @@ $('go').onclick=function(){
   if(!id){$('res').innerHTML='<li style="cursor:default"><small>Ajoute ton identifiant Jamendo.</small></li>';return}
   try{localStorage.setItem('jid',id)}catch(e){}
   $('res').innerHTML='<li style="cursor:default"><small>Recherche…</small></li>';
-  var u='https://api.jamendo.com/v3.0/tracks/?format=json&limit=20&audioformat=mp32&client_id='+encodeURIComponent(id)+(q?'&search='+encodeURIComponent(q):'&order=popularity_week');
+  var u='https://api.jamendo.com/v3.0/tracks/?format=json&limit=20&audioformat=mp32&audiodlformat=mp32&client_id='+encodeURIComponent(id)+(q?'&search='+encodeURIComponent(q):'&order=popularity_week');
   fetch(u).then(function(r){return r.json()}).then(function(d){
-    web=(d.results||[]).map(function(x){return{name:x.name,artist:x.artist_name,url:x.audio}});
+    web=(d.results||[]).map(function(x){return{name:x.name,artist:x.artist_name,url:x.audio,dl:x.audiodownload_allowed?x.audiodownload:''}});
     var ul=$('res');ul.innerHTML='';
     if(!web.length){ul.innerHTML='<li style="cursor:default"><small>Aucun résultat.</small></li>';return}
     web.forEach(function(t,i){
       var li=document.createElement('li');
-      li.innerHTML='<div class="t"><b></b><small></small></div>';
+      li.innerHTML='<div class="t"><b></b><small></small></div>'+(t.dl?'<button class="x" data-m="lib" title="Garder dans ma bibliothèque">📥</button><button class="x" data-m="file" title="Télécharger le fichier">💾</button>':'');
       li.querySelector('b').textContent=t.name;li.querySelector('small').textContent=t.artist;
-      li.onclick=function(){play(web,i)};ul.appendChild(li);
+      li.onclick=function(){play(web,i)};
+      [].forEach.call(li.querySelectorAll('.x'),function(b){b.onclick=function(e){e.stopPropagation();grab(t.dl,t.name+' - '+t.artist,'.mp3',b.dataset.m)}});
+      ul.appendChild(li);
     });
   }).catch(function(){$('res').innerHTML='<li style="cursor:default"><small>Connexion impossible. Vérifie internet et ton identifiant.</small></li>'});
 };
@@ -190,6 +194,8 @@ if('mediaSession' in navigator){try{
   navigator.mediaSession.setActionHandler('previoustrack',prev);
 }catch(e){}}
 
+function toast(t){var e=$('toast');e.textContent=t;e.style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(function(){e.style.opacity=0},3500)}
+function grab(url,name,ext,mode){toast('Téléchargement en cours…');fetch(url).then(function(r){if(!r.ok)throw 0;return r.blob()}).then(function(b){if(mode==='lib'){save(new File([b],name+ext,{type:b.type}));toast('Ajouté à ta bibliothèque ✓')}else{var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name.replace(/[\\/:*?"<>|]/g,'')+ext;document.body.appendChild(a);a.click();a.remove();toast('Fichier enregistré ✓')}}).catch(function(){toast('Téléchargement direct impossible : ouverture du lien…');window.open(url,'_blank')})}
 openDB(loadAll);
 })();
 </script>
