@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ma Musique</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f8a5f">
+<link rel="icon" href="icon.svg">
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--tx:#1d1d1b;--mut:#77756e;--ac:#0f8a5f;--bd:#e3e0d8;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121513;--card:#1c211e;--tx:#eeeee8;--mut:#9a9a92;--ac:#3ddc97;--bd:#2c332f}}
+:root[data-theme="dark"]{--bg:#121513;--card:#1c211e;--tx:#eeeee8;--mut:#9a9a92;--ac:#3ddc97;--bd:#2c332f}
+*{box-sizing:border-box}html{color-scheme:light dark}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:640px;margin:auto;padding:16px 16px 190px}
+h1{font-size:22px;margin:4px 0 12px}
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tabs button,.btn{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:10px 14px;border-radius:10px;font-size:15px;cursor:pointer}
+.tabs button.on,.btn.pri{background:var(--ac);color:#fff;border-color:var(--ac)}
+input[type=text],input[type=search]{width:100%;padding:11px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);font-size:15px;margin-bottom:8px}
+.row{display:flex;gap:8px;align-items:center}
+ul{list-style:none;margin:12px 0;padding:0}
+li{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer}
+li.cur{border-color:var(--ac)}
+li .t{flex:1;min-width:0}li b,li small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+li small{color:var(--mut)}
+li .x{background:none;border:0;color:var(--mut);font-size:20px;cursor:pointer}
+.note{color:var(--mut);font-size:13px;line-height:1.4}
+#bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--bd);padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));max-width:640px;margin:auto}
+#now{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:6px}
+#seek{width:100%;accent-color:var(--ac)}
+.tm{display:flex;justify-content:space-between;color:var(--mut);font-size:12px}
+.ctl{display:flex;justify-content:center;gap:10px;margin-top:6px}
+.ctl button{border:0;background:none;color:var(--tx);font-size:26px;padding:6px 12px;cursor:pointer;border-radius:10px}
+.ctl button.on{color:var(--ac)}
+#pp{background:var(--ac);color:#fff;border-radius:50%;width:52px;height:52px;padding:0}
+.hide{display:none}
+</style>
+</head>
+<body>
+<h1>🎵 Ma Musique</h1>
+<div class="tabs">
+  <button id="t1" class="on">Ma bibliothèque</button>
+  <button id="t2">Musique libre</button>
+</div>
+
+<section id="lib">
+  <label class="btn pri" style="display:inline-block">+ Ajouter des morceaux
+    <input id="file" type="file" accept="audio/*" multiple hidden>
+  </label>
+  <p class="note">Les morceaux restent enregistrés sur ton appareil et se lisent sans connexion.</p>
+  <ul id="list"></ul>
+</section>
+
+<section id="web" class="hide">
+  <p class="note">Catalogue gratuit et légal de Jamendo (artistes indépendants). Crée un identifiant gratuit sur developer.jamendo.com, colle-le ici (une seule fois). Fonctionne une fois l’appli hébergée sur ton site (GitHub Pages).</p>
+  <input id="cid" type="text" placeholder="Identifiant Jamendo (client_id)">
+  <div class="row"><input id="q" type="search" placeholder="Artiste, titre, style…" style="margin:0"><button id="go" class="btn pri">OK</button></div>
+  <ul id="res"></ul>
+</section>
+
+<div id="bar">
+  <div id="now">Aucun morceau</div>
+  <input id="seek" type="range" min="0" max="100" value="0">
+  <div class="tm"><span id="cu">0:00</span><span id="du">0:00</span></div>
+  <div class="ctl">
+    <button id="sh" title="Aléatoire">🔀</button>
+    <button id="pv">⏮</button>
+    <button id="pp">▶</button>
+    <button id="nx">⏭</button>
+    <button id="rp" title="Répéter">🔁</button>
+  </div>
+</div>
+<audio id="au"></audio>
+
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var au=$('au'),tracks=[],web=[],queue=[],idx=-1,shuf=false,rep=false,curUrl=null,db=null;
+
+// ---- IndexedDB (stockage local des morceaux)
+function openDB(cb){
+  try{
+    var r=indexedDB.open('ma-musique',1);
+    r.onupgradeneeded=function(){r.result.createObjectStore('t',{keyPath:'id',autoIncrement:true})};
+    r.onsuccess=function(){db=r.result;cb()};
+    r.onerror=function(){cb()};
+  }catch(e){cb()}
+}
+function loadAll(){
+  if(!db){render();return}
+  var o=db.transaction('t').objectStore('t').getAll();
+  o.onsuccess=function(){tracks=o.result;render()};
+}
+function save(f){
+  var rec={name:f.name.replace(/\.[^.]+$/,''),blob:f};
+  if(!db){rec.id=Date.now()+Math.random();tracks.push(rec);render();return}
+  var tx=db.transaction('t','readwrite');
+  tx.objectStore('t').add(rec);
+  tx.oncomplete=loadAll;
+}
+function del(id){
+  if(!db){tracks=tracks.filter(function(t){return t.id!==id});render();return}
+  var tx=db.transaction('t','readwrite');tx.objectStore('t').delete(id);tx.oncomplete=loadAll;
+}
+
+// ---- Affichage
+function render(){
+  var ul=$('list');ul.innerHTML='';
+  if(!tracks.length){ul.innerHTML='<li style="cursor:default"><div class="t"><small>Aucun morceau pour l’instant. Ajoute tes fichiers audio.</small></div></li>';return}
+  tracks.forEach(function(t,i){
+    var li=document.createElement('li');
+    if(queue===tracks&&idx===i)li.className='cur';
+    li.innerHTML='<div class="t"><b></b><small>Sur l’appareil</small></div><button class="x" title="Supprimer">✕</button>';
+    li.querySelector('b').textContent=t.name;
+    li.onclick=function(){play(tracks,i)};
+    li.querySelector('.x').onclick=function(e){e.stopPropagation();del(t.id)};
+    ul.appendChild(li);
+  });
+}
+
+// ---- Lecture
+function play(list,i){
+  queue=list;idx=i;var t=list[i];if(!t)return;
+  if(curUrl){URL.revokeObjectURL(curUrl);curUrl=null}
+  if(t.blob){curUrl=URL.createObjectURL(t.blob);au.src=curUrl}else{au.src=t.url}
+  au.play().catch(function(){});
+  $('now').textContent=t.name+(t.artist?' — '+t.artist:'');
+  if('mediaSession' in navigator){try{navigator.mediaSession.metadata=new MediaMetadata({title:t.name,artist:t.artist||''})}catch(e){}}
+  render();
+}
+function next(auto){
+  if(!queue.length)return;
+  if(auto&&rep){au.currentTime=0;au.play();return}
+  var n=shuf?Math.floor(Math.random()*queue.length):(idx+1)%queue.length;
+  play(queue,n);
+}
+function prev(){
+  if(!queue.length)return;
+  if(au.currentTime>3){au.currentTime=0;return}
+  play(queue,(idx-1+queue.length)%queue.length);
+}
+function fmt(s){if(!isFinite(s))return'0:00';var m=Math.floor(s/60),c=Math.floor(s%60);return m+':'+(c<10?'0':'')+c}
+$('pp').onclick=function(){if(!au.src){if(tracks.length)play(tracks,0);return}au.paused?au.play():au.pause()};
+$('nx').onclick=function(){next(false)};
+$('pv').onclick=prev;
+$('sh').onclick=function(){shuf=!shuf;this.classList.toggle('on',shuf)};
+$('rp').onclick=function(){rep=!rep;this.classList.toggle('on',rep)};
+au.onplay=function(){$('pp').textContent='⏸'};
+au.onpause=function(){$('pp').textContent='▶'};
+au.onended=function(){next(true)};
+au.ontimeupdate=function(){
+  if(au.duration){$('seek').value=au.currentTime/au.duration*100}
+  $('cu').textContent=fmt(au.currentTime);$('du').textContent=fmt(au.duration);
+};
+$('seek').oninput=function(){if(au.duration)au.currentTime=this.value/100*au.duration};
+$('file').onchange=function(){Array.prototype.forEach.call(this.files,save);this.value=''};
+
+// ---- Onglets
+function tab(w){
+  $('lib').classList.toggle('hide',w!==1);$('web').classList.toggle('hide',w!==2);
+  $('t1').classList.toggle('on',w===1);$('t2').classList.toggle('on',w===2);
+}
+$('t1').onclick=function(){tab(1)};$('t2').onclick=function(){tab(2)};
+
+// ---- Jamendo (musique libre et légale)
+try{$('cid').value=localStorage.getItem('jid')||''}catch(e){}
+$('go').onclick=function(){
+  var id=$('cid').value.trim(),q=$('q').value.trim();
+  if(!id){$('res').innerHTML='<li style="cursor:default"><small>Ajoute ton identifiant Jamendo.</small></li>';return}
+  try{localStorage.setItem('jid',id)}catch(e){}
+  $('res').innerHTML='<li style="cursor:default"><small>Recherche…</small></li>';
+  var u='https://api.jamendo.com/v3.0/tracks/?format=json&limit=20&audioformat=mp32&client_id='+encodeURIComponent(id)+(q?'&search='+encodeURIComponent(q):'&order=popularity_week');
+  fetch(u).then(function(r){return r.json()}).then(function(d){
+    web=(d.results||[]).map(function(x){return{name:x.name,artist:x.artist_name,url:x.audio}});
+    var ul=$('res');ul.innerHTML='';
+    if(!web.length){ul.innerHTML='<li style="cursor:default"><small>Aucun résultat.</small></li>';return}
+    web.forEach(function(t,i){
+      var li=document.createElement('li');
+      li.innerHTML='<div class="t"><b></b><small></small></div>';
+      li.querySelector('b').textContent=t.name;li.querySelector('small').textContent=t.artist;
+      li.onclick=function(){play(web,i)};ul.appendChild(li);
+    });
+  }).catch(function(){$('res').innerHTML='<li style="cursor:default"><small>Connexion impossible. Vérifie internet et ton identifiant.</small></li>'});
+};
+$('q').onkeydown=function(e){if(e.key==='Enter')$('go').click()};
+
+if('mediaSession' in navigator){try{
+  navigator.mediaSession.setActionHandler('nexttrack',function(){next(false)});
+  navigator.mediaSession.setActionHandler('previoustrack',prev);
+}catch(e){}}
+
+openDB(loadAll);
+})();
+</script>
+<script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})})}</script>
+</body>
+</html>
